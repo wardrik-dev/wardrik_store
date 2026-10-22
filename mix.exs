@@ -12,8 +12,18 @@ defmodule WardrikStore.MixProject do
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       aliases: aliases(),
+      test_coverage: [ignore_modules: ignored_by_coverage()],
       dialyzer: [
-        plt_add_apps: [:mix, :ex_unit, :ekv],
+        plt_add_apps: [
+          :mix,
+          :ex_unit,
+          :ekv,
+          :ecto,
+          :ecto_sql,
+          :postgrex,
+          :db_connection,
+          :durable_server
+        ],
         plt_core_path: "priv/plts",
         plt_local_path: "priv/plts"
       ],
@@ -32,6 +42,20 @@ defmodule WardrikStore.MixProject do
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_env), do: ["lib"]
+
+  defp ignored_by_coverage do
+    support = [
+      WardrikStore.Conformance,
+      WardrikStore.DurableConformance,
+      WardrikStore.Counter,
+      WardrikStore.TestRepo,
+      WardrikStore.TestMigration
+    ]
+
+    if System.get_env("DATABASE_URL"),
+      do: support,
+      else: support ++ [WardrikStore.Ecto, WardrikStore.Ecto.Migration]
+  end
 
   defp package do
     [
@@ -61,6 +85,9 @@ defmodule WardrikStore.MixProject do
   defp deps do
     [
       {:ekv, "~> 0.4.8", optional: true},
+      {:ecto_sql, "~> 3.13", optional: true},
+      {:postgrex, "~> 0.22", only: :test},
+      {:durable_server, "~> 0.1.6", optional: true},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:ex_slop, "~> 0.4", only: [:dev, :test], runtime: false},

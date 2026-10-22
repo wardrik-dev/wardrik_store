@@ -100,6 +100,16 @@ defmodule WardrikStore.Conformance do
           assert WardrikStore.get(store, key) == :same
         end
 
+        test "takes a version it never gave out as a conflict", %{scoped: store} = context do
+          key = unique_key(context)
+
+          assert {:error, :conflict} = WardrikStore.put(store, key, :first, if_vsn: "nope")
+          {:ok, _vsn} = WardrikStore.put(store, key, :first, if_vsn: nil)
+          assert {:error, :conflict} = WardrikStore.put(store, key, :second, if_vsn: "nope")
+          assert {:error, :conflict} = WardrikStore.delete(store, key, if_vsn: "nope")
+          assert WardrikStore.get(store, key) == :first
+        end
+
         test "deletes only the version it names", %{scoped: store} = context do
           key = unique_key(context)
 
@@ -157,7 +167,10 @@ defmodule WardrikStore.Conformance do
   defp scoping do
     quote do
       describe "a WardrikStore scoped" do
-        setup %{store: store}, do: %{outer: WardrikStore.scope(store, "conformance")}
+        setup %{store: store} do
+          run = "run#{System.unique_integer([:positive])}"
+          %{outer: store |> WardrikStore.scope("conformance") |> WardrikStore.scope(run)}
+        end
 
         test "keeps the same key apart in two scopes", %{outer: outer} = context do
           key = unique_key(context)
