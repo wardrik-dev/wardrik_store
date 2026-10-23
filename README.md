@@ -15,11 +15,17 @@ end
 
 ## Start a store
 
-Build a store from an adapter, and run it in your supervision tree:
+Build a store from an adapter, and run it in your supervision tree, ahead of what uses it:
 
 ```elixir
-store = WardrikStore.EKV.new(name: :my_app, data_dir: "/var/lib/my_app")
+store = WardrikStore.ETS.new(name: MyApp.Store)
 children = [{WardrikStore, store}]
+```
+
+That one keeps your data in memory. To keep it on disk, and on each node when clustered:
+
+```elixir
+store = WardrikStore.EKV.new(name: MyApp.Store, data_dir: "/var/lib/my_app")
 ```
 
 | Adapter | Keeps your data | Needs |
@@ -58,7 +64,8 @@ two packages never share a key. Scope it yourself to keep your app's own data ap
 ```elixir
 mine = WardrikStore.scope(store, "my_app")
 
-{:ok, vsn} = WardrikStore.put(mine, "settings/theme", "dark", if_vsn: nil)
+WardrikStore.put(mine, "settings/theme", "dark", if_vsn: nil)
+#=> {:ok, 1}
 WardrikStore.get(mine, "settings/theme")
 #=> "dark"
 WardrikStore.keys(mine, "settings/")
@@ -74,9 +81,17 @@ A write with `if_vsn:` lands only over the version you read, or only where nothi
 when it's `nil`. Otherwise it returns `{:error, :conflict}`:
 
 ```elixir
-{theme, vsn} = WardrikStore.lookup(mine, "settings/theme")
-WardrikStore.put(mine, "settings/theme", "light", if_vsn: vsn)
+WardrikStore.lookup(mine, "settings/theme")
+#=> {"dark", 1}
+
+WardrikStore.put(mine, "settings/theme", "light", if_vsn: 1)
+#=> {:ok, 2}
+
+WardrikStore.put(mine, "settings/theme", "blue", if_vsn: 1)
+#=> {:error, :conflict}
 ```
+
+A version is whatever the adapter stamps a write with; pass back the one you read.
 
 Use this when two processes, or two nodes, might change the same key at once.
 
