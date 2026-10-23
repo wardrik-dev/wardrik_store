@@ -5,15 +5,6 @@ if Code.ensure_loaded?(Ecto.Adapters.SQL) do
 
         store = WardrikStore.Ecto.new(repo: MyApp.Repo)
         children = [MyApp.Repo, {WardrikStore, store}]
-
-    Create its table from a migration of your own with `WardrikStore.Ecto.Migration`. The store
-    starts nothing itself. It logs an error as it starts when the table is missing, and your app
-    boots anyway.
-
-    Each write is one statement, so Postgres alone decides between two writers. Reads go through
-    your repo, so point it at the primary, not a replica.
-
-    Reach for this when your app already runs Postgres.
     """
 
     @behaviour WardrikStore.Adapter

@@ -1,29 +1,9 @@
 if Code.ensure_loaded?(DurableServer.StorageBackend) do
   defmodule WardrikStore.Durable do
     @moduledoc """
-    Keeps agents in a store, as a `DurableServer` backend.
+    Keeps WardrikCore's agents in a store, as a `DurableServer` backend.
 
-        store = WardrikStore.Ecto.new(repo: MyApp.Repo)
-
-        children = [
-          MyApp.Repo,
-          {WardrikStore, store},
-          {WardrikCore, backend: {WardrikStore.Durable, store: store}}
-        ]
-
-    Agents sit in the store's `durable` scope. Use it over a store whose reads are always current,
-    like `WardrikStore.Ecto` or `WardrikStore.ETS`. Over EKV, use DurableServer's own `EKVStore`.
-
-    An agent's state is decoded safely. One this release can't read, like one naming a module it
-    no longer has, is taken as never written, so the agent starts fresh.
-
-    | Option | Default |
-    | --- | --- |
-    | `:store` | required |
-    | `:discovery_interval_ms` | 30 seconds |
-    | `:heartbeat_interval_ms` | 10 seconds |
-
-    Reach for this when agents should live in the same store as everything else.
+        {WardrikCore, backend: {WardrikStore.Durable, store: store}}
     """
 
     @behaviour DurableServer.StorageBackend

@@ -3,14 +3,8 @@ if Code.ensure_loaded?(EKV) do
     @moduledoc """
     An EKV store keeps its keys on this node's disk, replicated between connected nodes.
 
-        store = WardrikStore.EKV.new(name: :my_app, data_dir: "/var/lib/my_app", cluster_size: 3)
+        store = WardrikStore.EKV.new(name: :my_app, data_dir: "/var/lib/my_app")
         children = [{WardrikStore, store}]
-
-    It takes EKV's own options, and `cluster_size` is 1 unless you set it. Its keys sit under
-    `wardrik_store/`, so it can share an EKV instance with WardrikCore's agents. When your app
-    already runs that instance, build the store with its name and leave it out of your children.
-
-    Reach for this when you want durable storage with no database to run.
     """
 
     @behaviour WardrikStore.Adapter

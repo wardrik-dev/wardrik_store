@@ -4,12 +4,6 @@ defmodule WardrikStore.ETS do
 
       store = WardrikStore.ETS.new(name: MyApp.Store)
       children = [{WardrikStore, store}]
-
-  You name it, and the name is its table's, so pick one your app owns. Reads go straight to the
-  table. Writes go through the process one at a time, so a conditional write sees the version it
-  names.
-
-  Reach for this in tests, in development, and for data your app can rebuild after a restart.
   """
 
   @behaviour WardrikStore.Adapter

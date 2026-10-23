@@ -1,24 +1,12 @@
 defmodule WardrikStore do
   @moduledoc """
-  A durable key-value store that Wardrik packages keep their data in.
+  A durable key-value store that Wardrik packages keep their data in, each under a scope of its own.
 
       store = WardrikStore.ETS.new(name: MyApp.Store)
       children = [{WardrikStore, store}]
 
-  Hand the same store to each package. A package scopes it by its OTP app name before it writes, so
-  two packages never share a key:
-
       vault = WardrikStore.scope(store, "wardrik_vault")
       {:ok, vsn} = WardrikStore.put(vault, "github/jon", grant, if_vsn: nil)
-
-  Scope it yourself to keep your app's own data apart, or to run two of one package. Scopes nest,
-  and a key in one scope never matches a key in another, whatever characters it holds.
-
-  A write with `if_vsn:` lands only over that version, or only where nothing is written yet when
-  it's `nil`. Notice a key written that way should always be written that way, because some
-  adapters refuse an unconditional write over it.
-
-  Reach for this when a package needs to keep something past a restart.
   """
 
   alias WardrikStore.Adapter
