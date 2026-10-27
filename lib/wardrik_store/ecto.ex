@@ -1,10 +1,17 @@
 if Code.ensure_loaded?(Ecto.Adapters.SQL) do
   defmodule WardrikStore.Ecto do
     @moduledoc """
-    An Ecto store keeps its keys in a Postgres table, through your app's repo.
+    An Ecto store keeps its keys in a Postgres table, through your app's repo, or a repo of its own.
 
         store = WardrikStore.Ecto.new(repo: MyApp.Repo)
         children = [MyApp.Repo, {WardrikStore, store}]
+
+    Through your repo, you create the table from a migration of your own; see
+    `WardrikStore.Ecto.Migration`. Given a `:url` instead, the store starts `WardrikStore.Ecto.Repo`
+    over it, and runs its migrations before it keeps anything, one node at a time. `?ssl=true` in
+    the URL connects over TLS, checked against the system's certificates.
+
+        store = WardrikStore.Ecto.new(url: "postgres://user:pass@db.example.com/wardrik?ssl=true")
     """
 
     @behaviour WardrikStore.Adapter
@@ -15,9 +22,27 @@ if Code.ensure_loaded?(Ecto.Adapters.SQL) do
 
     @table "wardrik_store"
 
-    @doc "Builds a store over `:repo`. Starts nothing."
+    defmodule Own do
+      @moduledoc false
+      @derive {Inspect, only: []}
+      @enforce_keys [:url]
+      defstruct [:url]
+    end
+
+    @doc "Builds a store over `:repo`, or a repo of its own over `:url`. Starts nothing."
     @spec new(keyword()) :: WardrikStore.t()
-    def new(opts), do: WardrikStore.new(__MODULE__, Keyword.fetch!(opts, :repo))
+    def new(opts) do
+      case Keyword.take(opts, [:repo, :url]) do
+        [repo: repo] ->
+          WardrikStore.new(__MODULE__, repo)
+
+        [url: url] ->
+          WardrikStore.new(__MODULE__, %Own{url: url})
+
+        _neither_or_both ->
+          raise ArgumentError, "Give WardrikStore.Ecto a :repo or a :url, not both."
+      end
+    end
 
     @doc "Checks the store's table is there, logging an error when it isn't. Returns `:ignore`."
     @spec start_link(module()) :: :ignore
@@ -32,9 +57,24 @@ if Code.ensure_loaded?(Ecto.Adapters.SQL) do
     end
 
     @impl WardrikStore.Adapter
+    def child_spec(%Own{url: url}) do
+      children = [
+        {WardrikStore.Ecto.Repo, WardrikStore.Ecto.Repo.options(url)},
+        %{id: :migrated, start: {WardrikStore.Ecto.Repo, :migrate, []}}
+      ]
+
+      %{
+        id: __MODULE__,
+        start: {Supervisor, :start_link, [children, [strategy: :rest_for_one]]},
+        type: :supervisor
+      }
+    end
+
     def child_spec(repo), do: %{id: __MODULE__, start: {__MODULE__, :start_link, [repo]}}
 
     @impl WardrikStore.Adapter
+    def put(%Own{}, path, value, opts), do: put(WardrikStore.Ecto.Repo, path, value, opts)
+
     def put(repo, path, value, opts) do
       vsn = :rand.uniform(0x7FFFFFFFFFFFFFFF)
       condition = Keyword.fetch(opts, :if_vsn)
@@ -47,6 +87,8 @@ if Code.ensure_loaded?(Ecto.Adapters.SQL) do
     end
 
     @impl WardrikStore.Adapter
+    def lookup(%Own{}, path), do: lookup(WardrikStore.Ecto.Repo, path)
+
     def lookup(repo, path) do
       case SQL.query!(repo, "SELECT value, vsn FROM #{@table} WHERE key = $1", [path]) do
         %{rows: [[value, vsn]]} -> {:erlang.binary_to_term(value, [:safe]), vsn}
@@ -55,6 +97,8 @@ if Code.ensure_loaded?(Ecto.Adapters.SQL) do
     end
 
     @impl WardrikStore.Adapter
+    def delete(%Own{}, path, opts), do: delete(WardrikStore.Ecto.Repo, path, opts)
+
     def delete(repo, path, opts) do
       case removed(repo, Keyword.fetch(opts, :if_vsn), path) do
         {:ok, %{num_rows: 1}} -> :ok
@@ -64,6 +108,8 @@ if Code.ensure_loaded?(Ecto.Adapters.SQL) do
     end
 
     @impl WardrikStore.Adapter
+    def keys(%Own{}, prefix), do: keys(WardrikStore.Ecto.Repo, prefix)
+
     def keys(repo, prefix) do
       %{rows: rows} =
         SQL.query!(
@@ -73,6 +119,30 @@ if Code.ensure_loaded?(Ecto.Adapters.SQL) do
         )
 
       Enum.map(rows, fn [key] -> key end)
+    end
+
+    @impl WardrikStore.Adapter
+    def lookup_many(%Own{}, paths), do: lookup_many(WardrikStore.Ecto.Repo, paths)
+
+    def lookup_many(repo, paths) do
+      %{rows: rows} =
+        SQL.query!(repo, "SELECT key, value, vsn FROM #{@table} WHERE key = ANY($1)", [paths])
+
+      for [key, value, vsn] <- rows, do: {key, :erlang.binary_to_term(value, [:safe]), vsn}
+    end
+
+    @impl WardrikStore.Adapter
+    def entries(%Own{}, prefix), do: entries(WardrikStore.Ecto.Repo, prefix)
+
+    def entries(repo, prefix) do
+      %{rows: rows} =
+        SQL.query!(
+          repo,
+          "SELECT key, value, vsn FROM #{@table} WHERE key LIKE $1 ESCAPE '\\' ORDER BY key",
+          [like(prefix) <> "%"]
+        )
+
+      for [key, value, vsn] <- rows, do: {key, :erlang.binary_to_term(value, [:safe]), vsn}
     end
 
     defp written(repo, :error, args) do

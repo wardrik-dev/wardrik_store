@@ -160,6 +160,35 @@ defmodule WardrikStore.Conformance do
           assert WardrikStore.keys(store, base <> "a%") == [base <> "a%b"]
           assert WardrikStore.keys(store, base <> "a\\") == [base <> "a\\b"]
         end
+
+        test "reads many keys at once, leaving out those that aren't there",
+             %{scoped: store} = context do
+          base = unique_key(context)
+          {:ok, _vsn} = WardrikStore.put(store, base <> "a", 1)
+          {:ok, _vsn} = WardrikStore.put(store, base <> "b", %{"b" => 2})
+
+          assert WardrikStore.lookup_many(store, [base <> "a", base <> "b", base <> "c"]) == %{
+                   (base <> "a") => WardrikStore.lookup(store, base <> "a"),
+                   (base <> "b") => WardrikStore.lookup(store, base <> "b")
+                 }
+
+          assert WardrikStore.lookup_many(store, []) == %{}
+        end
+
+        test "lists the entries under a prefix, in order, with values and versions",
+             %{scoped: store} = context do
+          prefix = unique_key(context) <> "/"
+          {:ok, _vsn} = WardrikStore.put(store, prefix <> "b", 2)
+          {:ok, _vsn} = WardrikStore.put(store, prefix <> "a_", 1)
+          {:ok, _vsn} = WardrikStore.put(store, prefix <> "a%", 0)
+          {1, a} = WardrikStore.lookup(store, prefix <> "a_")
+          {2, b} = WardrikStore.lookup(store, prefix <> "b")
+
+          assert WardrikStore.entries(store, prefix <> "a_") == [{prefix <> "a_", 1, a}]
+
+          assert [{_percent, 0, _vsn}, {_, 1, ^a}, {_, 2, ^b}] =
+                   WardrikStore.entries(store, prefix)
+        end
       end
     end
   end

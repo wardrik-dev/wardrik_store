@@ -49,12 +49,20 @@ defmodule WardrikStore.MixProject do
       WardrikStore.DurableConformance,
       WardrikStore.Counter,
       WardrikStore.TestRepo,
-      WardrikStore.TestMigration
+      WardrikStore.TestMigration,
+      WardrikStore.Ecto.Repo.V1
     ]
 
     if System.get_env("DATABASE_URL"),
       do: support,
-      else: support ++ [WardrikStore.Ecto, WardrikStore.Ecto.Migration]
+      else:
+        support ++
+          [
+            WardrikStore.Ecto,
+            WardrikStore.Ecto.Migration,
+            WardrikStore.Ecto.Repo,
+            WardrikStore.Ecto.Repo.V1
+          ]
   end
 
   defp package do
@@ -86,7 +94,7 @@ defmodule WardrikStore.MixProject do
     [
       {:ekv, "~> 0.4.8", optional: true},
       {:ecto_sql, "~> 3.13", optional: true},
-      {:postgrex, "~> 0.22", only: :test},
+      {:postgrex, "~> 0.22", optional: true},
       {:durable_server, "~> 0.1.6", optional: true},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

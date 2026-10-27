@@ -56,6 +56,16 @@ The store logs an error as it starts when the table is missing, and your app boo
 a release can still run its migrations. Point your repo at the primary, not a replica, so each
 read sees the last write.
 
+With no repo of your own, give it the database's URL. It starts a repo for itself, and creates
+its table before it keeps anything, one node at a time:
+
+```elixir
+store = WardrikStore.Ecto.new(url: "postgres://user:pass@db.example.com/wardrik?ssl=true")
+```
+
+`?ssl=true` connects over TLS, checked against the system's certificates. Add `postgrex` beside
+`ecto_sql` for it.
+
 ## Hand it to packages
 
 Give the same store to each package. A package scopes it by its OTP app name before it writes, so

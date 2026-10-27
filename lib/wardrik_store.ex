@@ -79,6 +79,43 @@ defmodule WardrikStore do
     |> Enum.sort()
   end
 
+  @doc "Finds the values under `keys` with their versions, by key, leaving out those that aren't there."
+  @spec lookup_many(t(), [key()]) :: %{key() => {term(), vsn()}}
+  def lookup_many(%__MODULE__{} = store, keys) when is_list(keys) do
+    paths = Map.new(keys, &{path(store, &1), &1})
+
+    for {path, value, vsn} <- many(store, Map.keys(paths)),
+        into: %{},
+        do: {Map.fetch!(paths, path), {value, vsn}}
+  end
+
+  @doc "Lists every key in the scope that starts with `prefix`, in order, each with its value and version."
+  @spec entries(t(), String.t()) :: [{key(), term(), vsn()}]
+  def entries(%__MODULE__{} = store, prefix \\ "") when is_binary(prefix) do
+    root = path(store, "")
+
+    store
+    |> listed(root <> prefix)
+    |> Enum.map(fn {path, value, vsn} -> {String.replace_prefix(path, root, ""), value, vsn} end)
+    |> Enum.sort_by(&elem(&1, 0))
+  end
+
+  defp many(%__MODULE__{adapter: adapter, config: config}, paths) do
+    if Code.ensure_loaded?(adapter) and function_exported?(adapter, :lookup_many, 2),
+      do: adapter.lookup_many(config, paths),
+      else: one_by_one(adapter, config, paths)
+  end
+
+  defp listed(%__MODULE__{adapter: adapter, config: config}, prefix) do
+    if Code.ensure_loaded?(adapter) and function_exported?(adapter, :entries, 2),
+      do: adapter.entries(config, prefix),
+      else: one_by_one(adapter, config, adapter.keys(config, prefix))
+  end
+
+  defp one_by_one(adapter, config, paths) do
+    for path <- paths, {value, vsn} <- [adapter.lookup(config, path)], do: {path, value, vsn}
+  end
+
   defp nested("", name), do: name
   defp nested(scope, name), do: scope <> "/" <> name
 
