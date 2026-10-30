@@ -1,16 +1,19 @@
 if Code.ensure_loaded?(Ecto.Adapters.Postgres) do
   defmodule WardrikStore.Ecto.Repo do
     @moduledoc """
-    The repo a `WardrikStore.Ecto` store starts over a `:url`. It records the migrations it runs in
-    `wardrik_store_migrations`, and runs them under a Postgres advisory lock, so nodes that start at
-    once migrate one at a time. One VM runs one.
+    The repo a `WardrikStore.Ecto` store starts when given a `:url`.
+
+    It records its migrations in `wardrik_store_migrations`. It runs them under a Postgres advisory
+    lock, so nodes that start together migrate one at a time.
+
+    A VM runs at most one.
     """
 
     use Ecto.Repo, otp_app: :wardrik_store, adapter: Ecto.Adapters.Postgres
 
     @migrations [{1, WardrikStore.Ecto.Repo.V1}]
 
-    @doc "Returns the options the repo starts with over `url`, with TLS where it says `ssl=true`."
+    @doc "Returns the repo's start options for `url`. Adds TLS options if `url` has `ssl=true`."
     @spec options(String.t()) :: keyword()
     def options(url) do
       %URI{host: host, query: query} = parsed = URI.parse(url)
@@ -37,7 +40,7 @@ if Code.ensure_loaded?(Ecto.Adapters.Postgres) do
         customize_hostname_check: [match_fun: :public_key.pkix_verify_hostname_match_fun(:https)]
       ]
 
-    @doc "Runs every migration the store's table needs. Returns `:ignore`, as a child that's done."
+    @doc "Runs the migrations the store's table needs. Returns `:ignore`, so it can run as a child."
     @spec migrate() :: :ignore
     def migrate do
       _ran = Ecto.Migrator.run(__MODULE__, @migrations, :up, all: true, log: false)

@@ -1,35 +1,50 @@
 defmodule WardrikStore.Adapter do
   @moduledoc """
-  An adapter is where a store keeps its keys. Callers go through `WardrikStore`. An adapter that
-  reads many keys at once more cheaply than one by one, as a database does, implements
-  `c:lookup_many/2` and `c:entries/2`; `WardrikStore` reads them one by one for one that doesn't.
+  The behaviour that decides where a store keeps its keys. Callers use `WardrikStore`, not the
+  adapter.
+
+  An adapter also has a `new/1` that builds the store:
+
+      defmodule MyApp.Store do
+        @behaviour WardrikStore.Adapter
+
+        def new(opts), do: WardrikStore.new(__MODULE__, Keyword.fetch!(opts, :name))
+
+        # child_spec/1, put/4, lookup/2, delete/3 and keys/2 follow
+      end
+
+  Each callback gets that config, and a full path that already holds the store's scopes.
+
+  `c:lookup_many/2` and `c:entries/2` are optional. Implement them when reading many keys at once
+  is cheaper than one at a time, as in a database. Otherwise `WardrikStore` reads keys one at a
+  time.
   """
 
-  @typedoc "What an adapter's `new/1` built, handed back to each of its callbacks."
+  @typedoc "The config the adapter's `new/1` built. Each callback gets it."
   @type config() :: term()
 
   @doc "Returns the child that runs the adapter."
   @callback child_spec(config()) :: Supervisor.child_spec()
 
-  @doc "Writes `value` under the full `path`."
+  @doc "Writes `value` under `path`. Takes `:if_vsn` as `WardrikStore.put/4` does."
   @callback put(config(), path :: String.t(), value :: term(), keyword()) ::
               {:ok, WardrikStore.vsn() | nil} | {:error, :conflict | term()}
 
-  @doc "Finds the value under `path` with its version, or returns `nil`."
+  @doc "Returns `{value, vsn}` for `path`, or `nil`."
   @callback lookup(config(), path :: String.t()) :: {term(), WardrikStore.vsn()} | nil
 
-  @doc "Removes `path`. Removing one that isn't there is `:ok`."
+  @doc "Removes `path`. Returns `:ok` if it isn't there. Takes `:if_vsn` as `WardrikStore.delete/3` does."
   @callback delete(config(), path :: String.t(), keyword()) :: :ok | {:error, :conflict | term()}
 
-  @doc "Lists every full path that starts with `prefix`."
+  @doc "Returns every path that starts with `prefix`."
   @callback keys(config(), prefix :: String.t()) :: [String.t()]
 
-  @doc "Finds the values under `paths` with their versions, leaving out those that aren't there."
+  @doc "Returns `{path, value, vsn}` for each of `paths`. Paths that aren't there are left out."
   @callback lookup_many(config(), paths :: [String.t()]) :: [
               {String.t(), term(), WardrikStore.vsn()}
             ]
 
-  @doc "Lists every full path that starts with `prefix`, with its value and version."
+  @doc "Returns `{path, value, vsn}` for every path that starts with `prefix`."
   @callback entries(config(), prefix :: String.t()) :: [{String.t(), term(), WardrikStore.vsn()}]
 
   @optional_callbacks lookup_many: 2, entries: 2

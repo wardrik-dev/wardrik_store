@@ -9,6 +9,7 @@ defmodule WardrikStore.Conformance do
       unquote(versions())
       unquote(listing())
       unquote(scoping())
+      unquote(starting())
     end
   end
 
@@ -222,6 +223,22 @@ defmodule WardrikStore.Conformance do
           assert WardrikStore.get(inner, key) == nil
           assert WardrikStore.keys(inner, key) == []
           assert WardrikStore.keys(outer, "inner") == ["inner/" <> key, "inner:" <> key]
+        end
+      end
+    end
+  end
+
+  defp starting do
+    quote do
+      describe "a WardrikStore starting" do
+        test "starts nothing where it's already running", %{store: store} = context do
+          key = unique_key(context)
+          {:ok, _vsn} = WardrikStore.put(store, key, :kept)
+
+          assert {:ok, :undefined} =
+                   start_supervised(Supervisor.child_spec({WardrikStore, store}, id: :again))
+
+          assert WardrikStore.get(store, key) == :kept
         end
       end
     end

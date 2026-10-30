@@ -1,9 +1,17 @@
 if Code.ensure_loaded?(DurableServer.StorageBackend) do
   defmodule WardrikStore.Durable do
     @moduledoc """
-    Keeps WardrikCore's agents in a store, as a `DurableServer` backend.
+    A `DurableServer` backend that keeps WardrikCore's agents in a store.
 
         {WardrikCore, backend: {WardrikStore.Durable, store: store}}
+
+    Agents are kept under the store's `durable` scope.
+
+    ## Options
+
+      * `:store` - required. The `WardrikStore` to keep agents in.
+      * `:heartbeat_interval_ms` - `10_000` unless set.
+      * `:discovery_interval_ms` - `30_000` unless set.
     """
 
     @behaviour DurableServer.StorageBackend

@@ -1,20 +1,28 @@
 defmodule WardrikStore.ETS do
   @moduledoc """
-  An ETS store keeps its keys in memory, for as long as its process runs.
+  Keeps keys in memory. They're gone when the store's process stops.
 
       store = WardrikStore.ETS.new(name: MyApp.Store)
       children = [{WardrikStore, store}]
+
+  Use it for tests, development and data your app can rebuild.
   """
 
   @behaviour WardrikStore.Adapter
 
   use GenServer
 
-  @doc "Builds a store named `:name`. Starts nothing."
+  @doc """
+  Builds a store. Starts nothing.
+
+  ## Options
+
+    * `:name` - required. The name of the store's process and table.
+  """
   @spec new(keyword()) :: WardrikStore.t()
   def new(opts), do: WardrikStore.new(__MODULE__, Keyword.fetch!(opts, :name))
 
-  @doc "Starts the store, empty, under `name`."
+  @doc "Starts the store with an empty table, both named `name`."
   @spec start_link(atom()) :: GenServer.on_start()
   def start_link(name) when is_atom(name), do: GenServer.start_link(__MODULE__, name, name: name)
 

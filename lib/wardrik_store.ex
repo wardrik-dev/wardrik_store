@@ -1,12 +1,15 @@
 defmodule WardrikStore do
   @moduledoc """
-  A durable key-value store that Wardrik packages keep their data in, each under a scope of its own.
+  A durable key-value store. Wardrik packages keep their data in it, each under its own scope.
 
       store = WardrikStore.ETS.new(name: MyApp.Store)
       children = [{WardrikStore, store}]
 
       vault = WardrikStore.scope(store, "wardrik_vault")
       {:ok, vsn} = WardrikStore.put(vault, "github/jon", grant, if_vsn: nil)
+
+  An adapter decides where the keys are kept. See `WardrikStore.ETS`, `WardrikStore.EKV` and
+  `WardrikStore.Ecto`.
   """
 
   alias WardrikStore.Adapter
@@ -30,12 +33,39 @@ defmodule WardrikStore do
   def new(adapter, config) when is_atom(adapter),
     do: %__MODULE__{adapter: adapter, config: config}
 
-  @doc "Returns the child that runs the store."
-  @spec child_spec(t()) :: Supervisor.child_spec()
-  def child_spec(%__MODULE__{adapter: adapter, config: config}),
-    do: Supervisor.child_spec(adapter.child_spec(config), id: __MODULE__)
+  @doc """
+  Returns the child spec that runs the store.
 
-  @doc "Nests the store under `name`, which is lowercase letters, digits and underscores."
+  Starts nothing if the store is already running. So each thing that uses the store can list it
+  among its own children.
+
+      children = [{WardrikStore, store}, {MyApp.Uses, store: store}]
+  """
+  @spec child_spec(t()) :: Supervisor.child_spec()
+  def child_spec(%__MODULE__{adapter: adapter, config: config}) do
+    %{start: start} = spec = adapter.child_spec(config)
+    Supervisor.child_spec(%{spec | start: {__MODULE__, :start_once, [start]}}, id: __MODULE__)
+  end
+
+  @doc false
+  @spec start_once(mfa()) :: Supervisor.on_start_child()
+  def start_once({module, function, args}) do
+    case apply(module, function, args) do
+      {:error, {:already_started, _pid}} -> :ignore
+      started -> started
+    end
+  end
+
+  @doc """
+  Returns the store nested under the scope `name`.
+
+  Keys in one scope never match keys in another.
+
+      mine = WardrikStore.scope(store, "my_app")
+
+  `name` starts with a lowercase letter, followed by lowercase letters, digits and underscores.
+  Raises `ArgumentError` otherwise.
+  """
   @spec scope(t(), String.t()) :: t()
   def scope(%__MODULE__{} = store, name) when is_binary(name) do
     if Regex.match?(@scope_name, name),
@@ -43,13 +73,25 @@ defmodule WardrikStore do
       else: raise(ArgumentError, not_a_scope_name(name))
   end
 
-  @doc "Writes `value` under `key`. With `if_vsn:` it writes only over that version."
+  @doc """
+  Writes `value` under `key`. Returns `{:ok, vsn}`.
+
+      {:ok, vsn} = WardrikStore.put(store, "settings/theme", "dark", if_vsn: nil)
+      {:ok, _vsn} = WardrikStore.put(store, "settings/theme", "light", if_vsn: vsn)
+      {:error, :conflict} = WardrikStore.put(store, "settings/theme", "blue", if_vsn: vsn)
+
+  ## Options
+
+    * `:if_vsn` - writes only over this version, or only where `key` is empty when `nil`.
+      Returns `{:error, :conflict}` otherwise. Without it, the write always lands, and some
+      adapters return `{:ok, nil}`.
+  """
   @spec put(t(), key(), term(), if_vsn: vsn() | nil) ::
           {:ok, vsn() | nil} | {:error, :conflict | term()}
   def put(%__MODULE__{} = store, key, value, opts \\ []) when is_binary(key),
     do: store.adapter.put(store.config, path(store, key), value, opts)
 
-  @doc "Finds the value under `key`, or returns `nil`."
+  @doc "Returns the value under `key`, or `nil`."
   @spec get(t(), key()) :: term() | nil
   def get(%__MODULE__{} = store, key) do
     case lookup(store, key) do
@@ -58,17 +100,23 @@ defmodule WardrikStore do
     end
   end
 
-  @doc "Finds the value under `key` with its version, or returns `nil`."
+  @doc "Returns `{value, vsn}` for `key`, or `nil`."
   @spec lookup(t(), key()) :: {term(), vsn()} | nil
   def lookup(%__MODULE__{} = store, key) when is_binary(key),
     do: store.adapter.lookup(store.config, path(store, key))
 
-  @doc "Removes `key`. With `if_vsn:` it removes only that version."
+  @doc """
+  Removes `key`. Returns `:ok`, also when `key` isn't there.
+
+  ## Options
+
+    * `:if_vsn` - removes only this version. Returns `{:error, :conflict}` otherwise.
+  """
   @spec delete(t(), key(), if_vsn: vsn()) :: :ok | {:error, :conflict | term()}
   def delete(%__MODULE__{} = store, key, opts \\ []) when is_binary(key),
     do: store.adapter.delete(store.config, path(store, key), opts)
 
-  @doc "Lists every key in the scope that starts with `prefix`, in order."
+  @doc "Returns the scope's keys that start with `prefix`, sorted."
   @spec keys(t(), String.t()) :: [key()]
   def keys(%__MODULE__{} = store, prefix \\ "") when is_binary(prefix) do
     root = path(store, "")
@@ -79,7 +127,7 @@ defmodule WardrikStore do
     |> Enum.sort()
   end
 
-  @doc "Finds the values under `keys` with their versions, by key, leaving out those that aren't there."
+  @doc "Returns `%{key => {value, vsn}}` for `keys`. Keys that aren't there are left out."
   @spec lookup_many(t(), [key()]) :: %{key() => {term(), vsn()}}
   def lookup_many(%__MODULE__{} = store, keys) when is_list(keys) do
     paths = Map.new(keys, &{path(store, &1), &1})
@@ -89,7 +137,7 @@ defmodule WardrikStore do
         do: {Map.fetch!(paths, path), {value, vsn}}
   end
 
-  @doc "Lists every key in the scope that starts with `prefix`, in order, each with its value and version."
+  @doc "Returns `{key, value, vsn}` for each of the scope's keys that starts with `prefix`, sorted by key."
   @spec entries(t(), String.t()) :: [{key(), term(), vsn()}]
   def entries(%__MODULE__{} = store, prefix \\ "") when is_binary(prefix) do
     root = path(store, "")

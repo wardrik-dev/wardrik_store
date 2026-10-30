@@ -1,17 +1,31 @@
 if Code.ensure_loaded?(EKV) do
   defmodule WardrikStore.EKV do
     @moduledoc """
-    An EKV store keeps its keys on this node's disk, replicated between connected nodes.
+    Keeps keys on disk with EKV, copied to each connected node.
 
         store = WardrikStore.EKV.new(name: :my_app, data_dir: "/var/lib/my_app")
         children = [{WardrikStore, store}]
+
+    Keys sit under `wardrik_store/`, so the store can share an EKV instance with other data.
+
+    Once a key is written with `:if_vsn`, keep writing it that way. EKV refuses an
+    unconditional write over it.
     """
 
     @behaviour WardrikStore.Adapter
 
     @root "wardrik_store/"
 
-    @doc "Builds a store over the EKV instance named `:name`. Starts nothing."
+    @doc """
+    Builds a store. Starts nothing.
+
+    ## Options
+
+      * `:name` - required. The EKV instance's name.
+      * `:cluster_size` - `1` unless set.
+
+    Other options, such as `:data_dir`, are passed to EKV when the store starts.
+    """
     @spec new(keyword()) :: WardrikStore.t()
     def new(opts) do
       options = Keyword.put_new(opts, :cluster_size, 1)

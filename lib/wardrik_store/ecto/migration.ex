@@ -1,7 +1,7 @@
 if Code.ensure_loaded?(Ecto.Migration) do
   defmodule WardrikStore.Ecto.Migration do
     @moduledoc """
-    Creates the table `WardrikStore.Ecto` keeps its keys in, from a migration of your own.
+    Creates the table `WardrikStore.Ecto` keeps keys in. Call it from a migration of your own:
 
         defmodule MyApp.Repo.Migrations.AddWardrikStore do
           use Ecto.Migration
@@ -10,22 +10,22 @@ if Code.ensure_loaded?(Ecto.Migration) do
           def down, do: WardrikStore.Ecto.Migration.down(version: 1)
         end
 
-    Each version is a step in the table's shape. A later release adds a version, and you add a
-    migration that runs it.
+    Each version is one change to the table. When a release adds a version, add a migration that
+    runs it.
     """
 
     use Ecto.Migration
 
     @versions [1]
 
-    @doc "Creates what `version` needs."
+    @doc "Creates what `:version` needs. Raises `ArgumentError` for an unknown version."
     @spec up(keyword()) :: :ok
     def up(opts) do
       opts |> version() |> change(:up)
       :ok
     end
 
-    @doc "Drops what `version` created."
+    @doc "Drops what `:version` created. Raises `ArgumentError` for an unknown version."
     @spec down(keyword()) :: :ok
     def down(opts) do
       opts |> version() |> change(:down)

@@ -1,47 +1,55 @@
 # WardrikStore
 
-A durable key-value store that Wardrik packages keep their data in, and that can keep
-[WardrikCore](https://hexdocs.pm/wardrik_core)'s agents too.
+A durable key-value store. Wardrik packages keep their data in it, and
+[WardrikCore](https://hexdocs.pm/wardrik_core) can keep its agents in it too.
 
 ## Install
 
 ```elixir
 def deps do
   [
-    {:wardrik_store, "~> 0.1"}
+    {:wardrik_store, "~> 0.1.0-rc.1"}
   ]
 end
 ```
 
 ## Start a store
 
-Build a store from an adapter, and run it in your supervision tree, ahead of what uses it:
+Build a store from an adapter. Start it in your supervision tree, ahead of what uses it:
 
 ```elixir
 store = WardrikStore.ETS.new(name: MyApp.Store)
 children = [{WardrikStore, store}]
 ```
 
-That one keeps your data in memory. To keep it on disk, and on each node when clustered:
+A store that's already running starts nothing. So each thing that uses the store can list it among
+its own children.
+
+Pick an adapter for where your data is kept:
 
 ```elixir
+# In memory, gone when the store stops
+store = WardrikStore.ETS.new(name: MyApp.Store)
+
+# On disk, copied to each connected node
 store = WardrikStore.EKV.new(name: MyApp.Store, data_dir: "/var/lib/my_app")
+
+# In Postgres, through your app's repo
+store = WardrikStore.Ecto.new(repo: MyApp.Repo)
+
+# In Postgres, through a repo of its own
+store = WardrikStore.Ecto.new(url: "postgres://user:pass@db.example.com/wardrik?ssl=true")
 ```
 
-| Adapter | Keeps your data | Needs |
+| Adapter | Keeps data | Needs |
 | --- | --- | --- |
-| `WardrikStore.ETS` | In memory. It's gone when its process stops. | Nothing. For tests, development, and data your app can rebuild. |
-| `WardrikStore.EKV` | On disk, and on each node when clustered. | The `ekv` dependency. |
-| `WardrikStore.Ecto` | In a Postgres table, through your app's repo. | The `ecto_sql` dependency, and a migration. |
+| `WardrikStore.ETS` | In memory. Use it for tests, development and data you can rebuild. | Nothing. |
+| `WardrikStore.EKV` | On disk, and on each connected node. | `{:ekv, "~> 0.4"}` |
+| `WardrikStore.Ecto` | In a Postgres table. | `{:ecto_sql, "~> 3.13"}`, and `:postgrex` for `:url` |
 
-EKV and Ecto are optional. Add the one you keep your data with:
+### Ecto through your repo
 
-```elixir
-{:ekv, "~> 0.4"}
-{:ecto_sql, "~> 3.13"}
-```
-
-The Ecto store keeps its keys in one Postgres table. Create it from a migration of your own:
+Create the table from a migration of your own:
 
 ```elixir
 defmodule MyApp.Repo.Migrations.AddWardrikStore do
@@ -52,66 +60,60 @@ defmodule MyApp.Repo.Migrations.AddWardrikStore do
 end
 ```
 
-The store logs an error as it starts when the table is missing, and your app boots anyway, so
-a release can still run its migrations. Point your repo at the primary, not a replica, so each
-read sees the last write.
+If the table is missing, the store logs an error as it starts. Your app still boots, so a release
+can run its migrations.
 
-With no repo of your own, give it the database's URL. It starts a repo for itself, and creates
-its table before it keeps anything, one node at a time:
+Point your repo at the primary, not a replica, so each read sees the last write.
 
-```elixir
-store = WardrikStore.Ecto.new(url: "postgres://user:pass@db.example.com/wardrik?ssl=true")
-```
+### Ecto through a URL
 
-`?ssl=true` connects over TLS, checked against the system's certificates. Add `postgrex` beside
-`ecto_sql` for it.
+The store starts a repo of its own. It creates its table before it keeps anything, one node at a
+time.
+
+`?ssl=true` connects over TLS, verified against the system's certificates.
 
 ## Hand it to packages
 
-Give the same store to each package. A package scopes it by its OTP app name before it writes, so
-two packages never share a key. Scope it yourself to keep your app's own data apart:
+Give the same store to each package. Each package scopes it by its OTP app name, so two packages
+never share a key. Scope it yourself to keep your app's data apart:
 
 ```elixir
 mine = WardrikStore.scope(store, "my_app")
 
-WardrikStore.put(mine, "settings/theme", "dark", if_vsn: nil)
-#=> {:ok, 1}
+{:ok, _vsn} = WardrikStore.put(mine, "settings/theme", "dark", if_vsn: nil)
+
 WardrikStore.get(mine, "settings/theme")
 #=> "dark"
+
 WardrikStore.keys(mine, "settings/")
 #=> ["settings/theme"]
 ```
 
 A scope's name is lowercase letters, digits and underscores, like an OTP app's. A key can hold any
-characters, and it never matches a key in another scope.
+characters.
 
 ## Write conditionally
 
-A write with `if_vsn:` lands only over the version you read, or only where nothing is written yet
-when it's `nil`. Otherwise it returns `{:error, :conflict}`:
+Use `:if_vsn` when two processes, or two nodes, might change the same key at once. The write lands
+only over the version you read. With `nil`, it lands only where nothing is written yet.
 
 ```elixir
-WardrikStore.lookup(mine, "settings/theme")
-#=> {"dark", 1}
+{"dark", vsn} = WardrikStore.lookup(mine, "settings/theme")
 
-WardrikStore.put(mine, "settings/theme", "light", if_vsn: 1)
-#=> {:ok, 2}
+{:ok, _new_vsn} = WardrikStore.put(mine, "settings/theme", "light", if_vsn: vsn)
 
-WardrikStore.put(mine, "settings/theme", "blue", if_vsn: 1)
+WardrikStore.put(mine, "settings/theme", "blue", if_vsn: vsn)
 #=> {:error, :conflict}
 ```
 
-A version is whatever the adapter stamps a write with; pass back the one you read.
-
-Use this when two processes, or two nodes, might change the same key at once.
+A version is whatever the adapter stamps a write with. Pass back the one you read.
 
 Once you write a key conditionally, keep writing it that way. EKV refuses an unconditional write
 over it.
 
 ## Keep agents in it
 
-`WardrikStore.Durable` keeps WardrikCore's agents in the same store as everything else, in its
-`durable` scope:
+`WardrikStore.Durable` keeps WardrikCore's agents in the store, under its `durable` scope:
 
 ```elixir
 store = WardrikStore.Ecto.new(repo: MyApp.Repo)
@@ -123,11 +125,10 @@ children = [
 ]
 ```
 
-Use it over the Ecto or ETS store. It needs the `durable_server` dependency, which WardrikCore
-already brings.
+Use it with the Ecto or ETS store. It needs `durable_server`, which WardrikCore already brings.
 
-Over EKV, keep agents with DurableServer's own `EKVStore` instead, which is faster. The two can
-share one EKV instance, since the store's keys sit under `wardrik_store/`:
+With EKV, use DurableServer's own `EKVStore` instead. It's faster. The two can share one EKV
+instance, since the store's keys sit under `wardrik_store/`:
 
 ```elixir
 store = WardrikStore.EKV.new(name: :my_app)
@@ -138,18 +139,28 @@ children = [
 ]
 ```
 
-EKV is already in your children here, so leave the store out of them.
+EKV is already in the children here, so leave the store out.
 
 ## Write an adapter
 
-An adapter is a module that implements `WardrikStore.Adapter`, and a `new/1` that builds a store
-with `WardrikStore.new(__MODULE__, config)`. Each callback gets that config, and a full path that
-already holds the store's scopes:
+Implement `WardrikStore.Adapter`, plus a `new/1` that builds the store:
+
+```elixir
+defmodule MyApp.Store do
+  @behaviour WardrikStore.Adapter
+
+  def new(opts), do: WardrikStore.new(__MODULE__, Keyword.fetch!(opts, :name))
+end
+```
+
+Each callback gets that config, and a full path that already holds the store's scopes:
 
 | Callback | Does |
 | --- | --- |
-| `child_spec/1` | Returns the child that runs the adapter. |
-| `put/4` | Writes a value, only over the version `if_vsn:` names. |
-| `lookup/2` | Finds a value and its version, or returns `nil`. |
-| `delete/3` | Removes a path, only at the version `if_vsn:` names. |
-| `keys/2` | Lists every path that starts with a prefix. |
+| `child_spec/1` | Returns the child spec that runs the adapter. |
+| `put/4` | Writes a value. Honours `:if_vsn`. |
+| `lookup/2` | Returns `{value, vsn}`, or `nil`. |
+| `delete/3` | Removes a path. Honours `:if_vsn`. |
+| `keys/2` | Returns every path that starts with a prefix. |
+| `lookup_many/2` | Optional. Reads many paths at once. |
+| `entries/2` | Optional. Reads every path under a prefix, with values. |

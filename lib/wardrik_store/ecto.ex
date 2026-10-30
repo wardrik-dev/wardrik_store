@@ -1,17 +1,30 @@
 if Code.ensure_loaded?(Ecto.Adapters.SQL) do
   defmodule WardrikStore.Ecto do
     @moduledoc """
-    An Ecto store keeps its keys in a Postgres table, through your app's repo, or a repo of its own.
+    Keeps keys in a Postgres table.
 
+        # Through your app's repo
         store = WardrikStore.Ecto.new(repo: MyApp.Repo)
         children = [MyApp.Repo, {WardrikStore, store}]
 
-    Through your repo, you create the table from a migration of your own; see
-    `WardrikStore.Ecto.Migration`. Given a `:url` instead, the store starts `WardrikStore.Ecto.Repo`
-    over it, and runs its migrations before it keeps anything, one node at a time. `?ssl=true` in
-    the URL connects over TLS, checked against the system's certificates.
-
+        # Through a repo of its own
         store = WardrikStore.Ecto.new(url: "postgres://user:pass@db.example.com/wardrik?ssl=true")
+        children = [{WardrikStore, store}]
+
+    ## Your repo
+
+    Create the table from a migration of your own. See `WardrikStore.Ecto.Migration`.
+
+    If the table is missing, the store logs an error as it starts. Your app still boots, so a
+    release can run its migrations.
+
+    ## A repo of its own
+
+    The store starts `WardrikStore.Ecto.Repo` over the URL. It creates the table before it keeps
+    anything, one node at a time.
+
+    `?ssl=true` connects over TLS, verified against the system's certificates. It needs
+    `:postgrex` in your deps.
     """
 
     @behaviour WardrikStore.Adapter
@@ -29,7 +42,18 @@ if Code.ensure_loaded?(Ecto.Adapters.SQL) do
       defstruct [:url]
     end
 
-    @doc "Builds a store over `:repo`, or a repo of its own over `:url`. Starts nothing."
+    @doc """
+    Builds a store. Starts nothing.
+
+    ## Options
+
+    Give one of:
+
+      * `:repo` - your app's repo. Point it at the primary, not a replica.
+      * `:url` - a Postgres URL for a repo of its own.
+
+    Raises `ArgumentError` if given both or neither.
+    """
     @spec new(keyword()) :: WardrikStore.t()
     def new(opts) do
       case Keyword.take(opts, [:repo, :url]) do
@@ -44,7 +68,7 @@ if Code.ensure_loaded?(Ecto.Adapters.SQL) do
       end
     end
 
-    @doc "Checks the store's table is there, logging an error when it isn't. Returns `:ignore`."
+    @doc "Checks the store's table exists in `repo`. Logs an error if it doesn't. Returns `:ignore`."
     @spec start_link(module()) :: :ignore
     def start_link(repo) do
       case SQL.query(repo, "SELECT to_regclass($1)::text", [@table]) do
@@ -65,7 +89,9 @@ if Code.ensure_loaded?(Ecto.Adapters.SQL) do
 
       %{
         id: __MODULE__,
-        start: {Supervisor, :start_link, [children, [strategy: :rest_for_one]]},
+        start:
+          {Supervisor, :start_link,
+           [children, [strategy: :rest_for_one, name: Module.concat(__MODULE__, Supervisor)]]},
         type: :supervisor
       }
     end
