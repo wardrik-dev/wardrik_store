@@ -1,7 +1,7 @@
 defmodule WardrikStore.Adapter do
   @moduledoc """
-  The behaviour that decides where a store keeps its keys. Callers use `WardrikStore`, not the
-  adapter.
+  Decides where a store keeps its keys: in memory, on disk or in Postgres. Callers use
+  `WardrikStore`, not the adapter.
 
   An adapter also has a `new/1` that builds the store:
 

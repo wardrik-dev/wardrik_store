@@ -48,7 +48,7 @@ defmodule WardrikStore do
   end
 
   @doc false
-  @spec start_once(mfa()) :: Supervisor.on_start_child()
+  @spec start_once({module(), atom(), [term()]}) :: Supervisor.on_start_child()
   def start_once({module, function, args}) do
     case apply(module, function, args) do
       {:error, {:already_started, _pid}} -> :ignore
